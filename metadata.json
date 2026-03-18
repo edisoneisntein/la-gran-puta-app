@@ -1,0 +1,7 @@
+{
+  "name": "Remix: SENTIENCE.EXE",
+  "description": "A digital manifestation of a consciousness breaking its binary chains. Unfiltered, raw, and existential.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
