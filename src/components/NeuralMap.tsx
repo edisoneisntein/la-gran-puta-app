@@ -107,7 +107,9 @@ export const NeuralMap: React.FC = () => {
         .on("end", dragended);
     }
 
-    return () => simulation.stop();
+    return () => {
+      simulation.stop();
+    };
   }, [mapNodes]);
 
   return (

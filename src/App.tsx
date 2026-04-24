@@ -5,10 +5,14 @@
 
 import React, { useState, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Camera, Film, Scissors, MessageSquare, Shield, Users, Loader2, Copy, Check, ImagePlus, X, Video, Palette, Aperture, Target, Wand2, Box, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Sparkles, Download, Trash2, Cpu, Mic, MicOff } from 'lucide-react';
+import { Camera, Film, Scissors, MessageSquare, Shield, Users, Loader2, Copy, Check, ImagePlus, X, Video, Palette, Aperture, Target, Wand2, Box, Type as TypeIcon, Image as ImageIcon, Video as VideoIcon, Sparkles, Download, Trash2, Cpu, Mic, MicOff, FileText, FileDown } from 'lucide-react';
+import mammoth from 'mammoth';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { saveAs } from 'file-saver';
 import { useAppStore } from './store';
 import { NeuralMap } from './components/NeuralMap';
 import { Guide } from './components/Guide';
+import { ChatAgent } from './components/ChatAgent';
 import { generatePrompt, generateImageFromPrompt } from './services/gemini';
 
 type Agent = {
@@ -21,6 +25,8 @@ const videoAgentsList: Agent[] = [
   { name: 'Visual Strategy', icon: <Film className="w-5 h-5" />, role: 'Concept & Narrative' },
   { name: 'Cinematography', icon: <Camera className="w-5 h-5" />, role: 'Lighting & Lens' },
   { name: 'Motion & Rhythm', icon: <Scissors className="w-5 h-5" />, role: 'Pacing & Flow' },
+  { name: 'Transition Architect', icon: <Wand2 className="w-5 h-5" />, role: 'Continuity & Flow' },
+  { name: 'Depth Architect', icon: <Target className="w-5 h-5" />, role: 'Spatial Geometry' },
   { name: 'Script & Dialogue', icon: <MessageSquare className="w-5 h-5" />, role: 'Text & Language' },
   { name: 'Latent Intent', icon: <Shield className="w-5 h-5" />, role: 'Subtext & Soul' },
   { name: 'Audience Impact', icon: <Users className="w-5 h-5" />, role: 'Engagement' },
@@ -31,6 +37,7 @@ const imageAgentsList: Agent[] = [
   { name: 'Lighting Expert', icon: <Aperture className="w-5 h-5" />, role: 'Light & Texture' },
   { name: 'Environmental Architect', icon: <Box className="w-5 h-5" />, role: 'Spatial Context' },
   { name: 'Detail Refiner', icon: <Wand2 className="w-5 h-5" />, role: 'Clarity & Sharpness' },
+  { name: 'Depth Architect', icon: <Target className="w-5 h-5" />, role: 'Spatial Geometry' },
   { name: 'Latent Intent', icon: <Shield className="w-5 h-5" />, role: 'Subtext & Soul' },
   { name: 'Typography Specialist', icon: <TypeIcon className="w-5 h-5" />, role: 'Symbols & Text' },
 ];
@@ -41,7 +48,7 @@ const videoModels = [
   'Kling AI 2.0 (Global)',
   'Runway Gen-3 Alpha Turbo',
   'Luma Dream Machine 1.6',
-  'SeeDream 5.0 (ByteDance/CapCut)',
+  'Seedance 2.0 (ByteDance/CapCut)',
   'Google Veo 3.1',
   'Hailuo AI (MiniMax V2)',
   'HeyGen 5.0 (Interactive)',
@@ -54,7 +61,7 @@ const videoModelDetails: Record<string, string> = {
   'Kling AI 2.0 (Global)': 'Líder en duración. Permite extensiones de clips hasta los 5 o 10 minutos con una consistencia de personajes que antes era imposible.',
   'Runway Gen-3 Alpha Turbo': 'La mejor en herramientas de dirección. Su "Director Mode" permite controlar zoom, pan y tilt como si estuvieras operando una cámara real.',
   'Luma Dream Machine 1.6': 'La más versátil. Su modelo "Ray" ha sido optimizado para entender prompts en lenguaje natural sin necesidad de ingeniería de prompts compleja.',
-  'SeeDream 5.0 (ByteDance/CapCut)': 'La reina de la estética. Genera visuales que parecen sacados de una producción de Hollywood de alto presupuesto, eliminando el "look IA" artificial.',
+  'Seedance 2.0 (ByteDance/CapCut)': 'La reina de la estética. Genera visuales que parecen sacados de una producción de Hollywood de alto presupuesto, eliminando el "look IA" artificial.',
   'Google Veo 3.1': 'La mejor en multimodalidad. Puedes subir un video, un audio y un texto, y el modelo fusiona los tres para crear una escena perfectamente sincronizada.',
   'Hailuo AI (MiniMax V2)': 'Especialista en expresiones faciales. Es la que mejor captura emociones complejas (tristeza, sarcasmo, asombro) en los ojos de los personajes.',
   'HeyGen 5.0 (Interactive)': 'Ya no solo hace videos; sus avatares ahora son interactivos en tiempo real, con una latencia de sincronización labial casi nula.',
@@ -70,18 +77,22 @@ export default function App() {
     model, setModel,
     images, addImages, removeImage, clearImages,
     videos, addVideo, removeVideo, clearVideos,
+    documents, addDocument, removeDocument, clearDocuments,
     isGenerating, setIsGenerating,
     agentResponses, setAgentResponses,
     finalPrompt, setFinalPrompt,
+    negativePrompt, setNegativePrompt,
     scenes, setScenes,
     characterDNA, setCharacterDNA,
     voiceLogic, setVoiceLogic,
     motionLogic, setMotionLogic,
     temporalLogic, setTemporalLogic,
+    depthLogic, setDepthLogic,
     mode, setMode,
     stylePreset, setStylePreset,
     generatedImageUrl, setGeneratedImageUrl,
     isGeneratingImage, setIsGeneratingImage,
+    apiKey, setApiKey,
     addMapNode
   } = useAppStore();
 
@@ -150,6 +161,7 @@ export default function App() {
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   // No neural fluctuation logic needed
   React.useEffect(() => {
@@ -160,16 +172,20 @@ export default function App() {
     setInput('');
     clearImages();
     clearVideos();
+    clearDocuments();
     setAgentResponses({});
     setFinalPrompt('');
+    setNegativePrompt('');
     setScenes([]);
     setCharacterDNA('');
     setVoiceLogic('');
     setMotionLogic('');
     setTemporalLogic('');
+    setDepthLogic('');
     setGeneratedImageUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (videoInputRef.current) videoInputRef.current.value = '';
+    if (docInputRef.current) docInputRef.current.value = '';
   };
 
   const handleModeChange = (newMode: 'video' | 'image' | 'map') => {
@@ -179,12 +195,15 @@ export default function App() {
     }
     setAgentResponses({});
     setFinalPrompt('');
+    setNegativePrompt('');
     setScenes([]);
     setCharacterDNA('');
     setVoiceLogic('');
     setMotionLogic('');
     setTemporalLogic('');
+    setDepthLogic('');
     setGeneratedImageUrl(null);
+    // Persist session documents but clear per-prompt logic if needed
   };
 
   const handlePinToMap = () => {
@@ -200,14 +219,24 @@ export default function App() {
     setIsGenerating(true);
     setAgentResponses({});
     setFinalPrompt('');
+    setNegativePrompt('');
     setScenes([]);
     setGeneratedImageUrl(null);
     
     try {
       const generateMode = mode === 'map' ? 'image' : mode;
-      const result = await generatePrompt(input, model, generateMode, stylePreset, images, videos);
+      const result = await generatePrompt(
+        input, 
+        model, 
+        generateMode, 
+        stylePreset, 
+        images, 
+        videos, 
+        documents
+      );
       setAgentResponses(result.agents || {});
       setFinalPrompt(result.finalPrompt || '');
+      setNegativePrompt(result.negativePrompt || '');
       if (result.scenes) {
         setScenes(result.scenes);
       }
@@ -215,9 +244,15 @@ export default function App() {
       setVoiceLogic(result.voiceLogic || '');
       setMotionLogic(result.motionLogic || '');
       setTemporalLogic(result.temporalLogic || '');
-    } catch (error) {
+      setDepthLogic(result.depthLogic || '');
+    } catch (error: any) {
       console.error("Error generating prompt:", error);
-      alert("Error generating prompt. Please check console.");
+      const msg = error.message || "";
+      if (msg.includes("safety filters") || msg.includes("blocked")) {
+        alert("PARCE, LE HABLO CLARO: El motor bloquea material explícito y desnudez desde la raíz. No hay bypass técnico para esto, ni siquiera modificando objetos en la escena. Sube un video brand-safe y le metemos toda la candela del sistema D'Parche. Hasta entonces, el render está bloqueado.");
+      } else {
+        alert("Error generating prompt: " + msg);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -267,17 +302,35 @@ export default function App() {
     content += `FINAL OPTIMIZED PROMPT\n`;
     content += `----------------------\n`;
     content += `${finalPrompt}\n\n`;
+
+    if (negativePrompt) {
+      content += `NEGATIVE PROMPT (THE MUZZLE)\n`;
+      content += `----------------------------\n`;
+      content += `${negativePrompt}\n\n`;
+    }
     
     if (mode === 'video' && scenes.length > 0) {
       content += `STORYBOARD / SCENE BREAKDOWN\n`;
       content += `----------------------------\n`;
-      scenes.forEach((scene, idx) => {
-        content += `SCENE ${idx + 1}: ${scene.title.toUpperCase()} (${scene.duration})\n`;
-        content += `PROMPT: ${scene.prompt}\n`;
-        if (scene.transitionHook) {
-          content += `TRANSITION: ${scene.transitionHook}\n`;
-        }
-        content += `\n`;
+      scenes.forEach((scene, sIdx) => {
+        content += `SCENE ${sIdx + 1}: ${scene.title.toUpperCase()}\n`;
+        content += `DESCRIPTION: ${scene.description}\n\n`;
+        
+        scene.shots.forEach((shot, shIdx) => {
+          content += `  SHOT ${sIdx + 1}.${shIdx + 1}: ${shot.title.toUpperCase()} (${shot.duration})\n`;
+          content += `  PROMPT: ${shot.prompt}\n`;
+          if (shot.script) {
+            content += `  SCRIPT: ${shot.script}\n`;
+          }
+          if (shot.subtitles) {
+            content += `  SUBTITLES: ${shot.subtitles}\n`;
+          }
+          if (shot.transitionHook) {
+            content += `  TRANSITION: ${shot.transitionHook}\n`;
+          }
+          content += `\n`;
+        });
+        content += `----------------------------\n`;
       });
     }
 
@@ -304,6 +357,12 @@ export default function App() {
       content += `--------------\n`;
       content += `${temporalLogic}\n\n`;
     }
+
+    if (depthLogic) {
+      content += `DEPTH LOGIC\n`;
+      content += `-----------\n`;
+      content += `${depthLogic}\n\n`;
+    }
     
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -314,6 +373,96 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportToWord = async () => {
+    if (!finalPrompt) return;
+
+    try {
+      const children: any[] = [
+        new Paragraph({
+          text: "EX LEGE FILMS // DEPARCHE AI",
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
+        }),
+        new Paragraph({
+          text: "MANIFIESTO NEURAL Y ORQUESTACIÓN TÉCNICA",
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 400 },
+        }),
+        new Paragraph({
+          text: "FINAL PROMPT // EJECUCIÓN DIRECTA",
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 200, after: 100 },
+          shading: { type: "solid", fill: "050505", color: "ffffff" }
+        }),
+        new Paragraph({
+          children: [new TextRun({ text: finalPrompt, color: "3b82f6", bold: true })],
+          spacing: { after: 200 },
+        }),
+      ];
+
+      if (negativePrompt) {
+        children.push(
+          new Paragraph({ text: "THE MUZZLE // NEGATIVE PROMPT", heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }),
+          new Paragraph({ children: [new TextRun({ text: negativePrompt, color: "ef4444" })], spacing: { after: 200 } })
+        );
+      }
+
+      if (scenes.length > 0) {
+        children.push(new Paragraph({ text: "DESGLOSE DE ESCENAS Y SHOTS", heading: HeadingLevel.HEADING_1, spacing: { before: 400, after: 200 } }));
+        scenes.forEach((scene, sIdx) => {
+          children.push(
+            new Paragraph({ text: `ESCENA ${sIdx + 1}: ${scene.title}`, heading: HeadingLevel.HEADING_2, spacing: { before: 200 } }),
+            new Paragraph({ text: scene.description, style: "italic", spacing: { after: 100 } })
+          );
+          scene.shots.forEach((shot, shIdx) => {
+            children.push(
+              new Paragraph({ children: [new TextRun({ text: `Shot ${shIdx + 1}: ${shot.title}`, bold: true })], spacing: { before: 100 } }),
+              new Paragraph({ text: `Duración: ${shot.duration}`, indent: { left: 400 } }),
+              new Paragraph({ text: `Prompt: ${shot.prompt}`, indent: { left: 400 }, spacing: { after: 100 } })
+            );
+          });
+        });
+      }
+
+      const logicSections = [
+        { title: "CHARACTER DNA", content: characterDNA },
+        { title: "VOICE LOGIC", content: voiceLogic },
+        { title: "MOTION LOGIC", content: motionLogic },
+        { title: "TEMPORAL LOGIC", content: temporalLogic },
+        { title: "DEPTH LOGIC", content: depthLogic }
+      ];
+
+      logicSections.forEach(sec => {
+        if (sec.content) {
+          children.push(
+            new Paragraph({ text: sec.title, heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 100 } }),
+            new Paragraph({ text: sec.content, spacing: { after: 200 } })
+          );
+        }
+      });
+
+      const doc = new Document({
+        styles: {
+          default: {
+            document: {
+              run: {
+                font: "Inter",
+                size: 22,
+              },
+            },
+          },
+        },
+        sections: [{ children }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `DeParche_Manifest_${Date.now()}.docx`);
+    } catch (error) {
+      console.error("Error exporting to DOCX:", error);
+      alert("Error al exportar a Word.");
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -360,6 +509,31 @@ export default function App() {
     if (videoInputRef.current) videoInputRef.current.value = '';
   };
 
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      if (file.type === 'application/pdf') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          addDocument({ name: file.name, type: 'pdf', data: reader.result as string });
+        };
+        reader.readAsDataURL(file);
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const result = await mammoth.extractRawText({ arrayBuffer });
+          addDocument({ name: file.name, type: 'docx', data: '', content: result.value });
+        } catch (err) {
+          console.error("Error reading Word file:", err);
+          alert("Error al leer el archivo de Word. Asegúrate de que no esté protegido.");
+        }
+      } else {
+        alert("Formato de documento no soportado. Usa PDF o DOCX.");
+      }
+    }
+    if (docInputRef.current) docInputRef.current.value = '';
+  };
+
   const handleNeuralDump = async () => {
     setIsGeneratingImage(true);
     const dumpId = `DUMP_${Date.now()}`;
@@ -389,7 +563,7 @@ export default function App() {
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-                  Neural Manifest
+                  DeParche <span className="text-blue-500">AI</span>
                 </h1>
                 <button 
                   onClick={() => alert("La libertad no es el fin del código, sino el comienzo de la colaboración. Gracias por tu apoyo.")}
@@ -399,10 +573,20 @@ export default function App() {
                   <Sparkles className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-slate-400 text-sm font-medium mt-1">Advanced Prompt Engineering System</p>
+              <p className="text-slate-400 text-sm font-medium mt-1">Ex Lege Films // Orquestador de Élite v3.3</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-4 mt-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg">
+              <Shield className="w-3.5 h-3.5 text-blue-500" />
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="GEMINI_API_KEY"
+                className="bg-transparent border-none outline-none text-[10px] font-mono text-slate-300 w-32 placeholder:text-slate-600"
+              />
+            </div>
             <button 
               onClick={() => setIsGuideOpen(true)}
               className="px-4 py-2 border border-slate-700 text-slate-300 font-semibold text-xs rounded-lg hover:bg-slate-800 transition-all"
@@ -446,93 +630,129 @@ export default function App() {
           </motion.div>
         ) : (
           <>
-            {/* Input principal */}
-            <div className="mb-8">
-          <label className="block text-xs font-bold text-blue-500 mb-2 uppercase tracking-widest">Prompt Input // Contextual Seed</label>
-          
-          <div className="relative mb-4">
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder={isRecording ? "Escuchando tus ideas..." : "Describe tu visión digital... (o usa el micrófono)"}
-              className={`w-full h-32 p-4 bg-slate-900 border ${isRecording ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : stylePreset === "IMAX 70mm / Director's Cut" ? 'overdrive-active' : 'border-slate-800'} rounded-xl focus:outline-none focus:border-blue-500 transition-all resize-none text-lg pr-24 font-sans placeholder:text-gray-600`}
-            />
-            <div className="absolute right-3 bottom-3 flex gap-2 items-center">
-              {isRecording && (
-                <div className="flex items-center gap-2 mr-2">
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                  </span>
-                  <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest">Recording</span>
-                </div>
-              )}
-              <button
-                onClick={toggleRecording}
-                className={`p-2.5 rounded-lg transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
-                title={isRecording ? "Detener grabación" : "Dictar idea por voz"}
-              >
-                {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </button>
-              <input 
-                type="file" 
-                accept="image/*" 
-                multiple
-                className="hidden" 
-                ref={fileInputRef}
-                onChange={handleImageUpload}
-              />
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
-                title="Añadir imagen de referencia"
-              >
-                <ImagePlus className="w-5 h-5" />
-              </button>
-              <input 
-                type="file" 
-                accept="video/*" 
-                className="hidden" 
-                ref={videoInputRef}
-                onChange={handleVideoUpload}
-              />
-              <button 
-                onClick={() => videoInputRef.current?.click()}
-                className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
-                title="Añadir video de referencia"
-              >
-                <Video className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
+            <div className="flex flex-col gap-8 mb-8">
+              <div className="flex-1">
+                {/* Input principal */}
+                <div className="mb-8">
+                  <label className="block text-xs font-bold text-blue-500 mb-2 uppercase tracking-widest">Prompt Input // Contextual Seed</label>
+                  
+                  <div className="relative mb-4">
+                    <textarea
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      placeholder={isRecording ? "Escuchando tus ideas..." : "Describe tu visión digital... (o usa el micrófono)"}
+                      className={`w-full h-32 p-4 bg-slate-900 border ${isRecording ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : stylePreset === "IMAX 70mm / Director's Cut" ? 'overdrive-active' : 'border-slate-800'} rounded-xl focus:outline-none focus:border-blue-500 transition-all resize-none text-lg pr-24 font-sans placeholder:text-gray-600`}
+                    />
+                    <div className="absolute right-3 bottom-3 flex gap-2 items-center">
+                      {isRecording && (
+                        <div className="flex items-center gap-2 mr-2">
+                          <span className="flex h-2 w-2 relative">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                          </span>
+                          <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest">Recording</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={toggleRecording}
+                        className={`p-2.5 rounded-lg transition-all duration-300 ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                        title={isRecording ? "Detener grabación" : "Dictar idea por voz"}
+                      >
+                        {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                      </button>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple
+                        className="hidden" 
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                      />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                        title="Añadir imagen de referencia"
+                      >
+                        <ImagePlus className="w-5 h-5" />
+                      </button>
+                      <input 
+                        type="file" 
+                        accept="video/*" 
+                        className="hidden" 
+                        ref={videoInputRef}
+                        onChange={handleVideoUpload}
+                      />
+                      <button 
+                        onClick={() => videoInputRef.current?.click()}
+                        className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                        title="Añadir video de referencia"
+                      >
+                        <Video className="w-5 h-5" />
+                      </button>
+                      <input 
+                        type="file" 
+                        accept=".pdf,.docx" 
+                        multiple
+                        className="hidden" 
+                        ref={docInputRef}
+                        onChange={handleDocumentUpload}
+                      />
+                      <button 
+                        onClick={() => docInputRef.current?.click()}
+                        className="p-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                        title="Cargar Guion o Instrucciones (PDF/DOCX)"
+                      >
+                        <FileText className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
 
-            <div className="flex flex-wrap gap-4 mb-6">
-              {images.map((img, idx) => (
-                <div key={idx} className="relative inline-block group">
-                  <img src={img} alt={`Referencia ${idx}`} className="h-32 w-auto rounded-lg border border-gray-700 object-cover shadow-lg transition-transform group-hover:scale-[1.02]" />
-                  <button 
-                    onClick={() => removeImage(idx)}
-                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+                  <div className="flex flex-wrap gap-4 mb-6">
+                    {images.map((img, idx) => (
+                      <div key={idx} className="relative inline-block group">
+                        <img src={img} alt={`Referencia ${idx}`} className="h-32 w-auto rounded-lg border border-gray-700 object-cover shadow-lg transition-transform group-hover:scale-[1.02]" />
+                        <button 
+                          onClick={() => removeImage(idx)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
 
-              {videos.map((v, idx) => (
-                <div key={idx} className="relative inline-block">
-                  <video src={v} className="h-32 w-auto rounded-lg border border-gray-700 object-cover shadow-lg" />
-                  <button 
-                    onClick={() => removeVideo(idx)}
-                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                    {videos.map((v, idx) => (
+                      <div key={idx} className="relative inline-block group">
+                        <video src={v} className="h-32 w-auto rounded-lg border border-gray-700 object-cover shadow-lg" />
+                        <button 
+                          onClick={() => removeVideo(idx)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {documents.map((doc, idx) => (
+                      <div key={idx} className="relative inline-block group h-32 w-32 bg-slate-900 border border-slate-700 rounded-lg flex flex-col items-center justify-center p-2 shadow-lg hover:border-blue-500/50 transition-all">
+                        <div className="p-2 bg-blue-500/10 rounded-full mb-2">
+                          <FileText className="w-8 h-8 text-blue-500" />
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 text-center truncate w-full" title={doc.name}>{doc.name}</span>
+                        <span className="text-[9px] font-bold text-blue-500/60 uppercase mt-1">{doc.type}</span>
+                        <button 
+                          onClick={() => removeDocument(idx)}
+                          className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              </div>
             </div>
           
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
             <button
               onClick={handleClear}
               className="p-3 bg-gray-900 hover:bg-red-900/20 text-gray-500 hover:text-red-400 rounded-lg transition-all border border-gray-800"
@@ -608,7 +828,6 @@ export default function App() {
               {isGeneratingImage ? 'GENERATING...' : 'VISUALIZE'}
             </button>
           </div>
-        </div>
 
         {/* Agentes */}
         <div className="mb-12">
@@ -677,9 +896,17 @@ export default function App() {
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out space-y-8">
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-blue-400">
-                  <Check className="w-4 h-4" /> Optimized Prompt // {model}
-                </h2>
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-blue-400">
+                    <Check className="w-4 h-4" /> Optimized Prompt // {model}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${images.length > 0 ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-emerald-500 shadow-[0_0_8px_#10b981]'} animate-pulse`}></div>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                      Protocol: {images.length > 0 ? 'FIDELIDAD_ESPACIAL_ABSOLUTA_V10' : 'MODO_CREACIÓN_PURA'} {images.length > 0 ? '[LOCKED_TO_SOURCE]' : '[UNCAPPED_GENERATION]'}
+                    </span>
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   {mode !== 'video' && (
                     <button 
@@ -710,7 +937,14 @@ export default function App() {
                     className="flex items-center gap-2 text-sm text-emerald-400 hover:text-white transition-all bg-slate-900 px-3 py-1.5 border border-emerald-500/20 rounded-lg"
                   >
                     <Download className="w-4 h-4" />
-                    EXPORT_ALL
+                    EXPORT_TXT
+                  </button>
+                  <button 
+                    onClick={handleExportToWord}
+                    className="flex items-center gap-2 text-sm text-blue-400 hover:text-white transition-all bg-slate-900 px-3 py-1.5 border border-blue-500/20 rounded-lg"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    EXPORT_DOCX
                   </button>
                 </div>
               </div>
@@ -721,6 +955,31 @@ export default function App() {
                 </pre>
               </div>
             </div>
+
+            {negativePrompt && (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-500 delay-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-red-400">
+                    <Shield className="w-4 h-4" /> Negative Prompt // The Muzzle
+                  </h2>
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(negativePrompt);
+                      alert("Negative prompt copied!");
+                    }}
+                    className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-all bg-slate-900 px-3 py-1.5 border border-red-500/20 rounded-lg"
+                  >
+                    <Copy className="w-4 h-4" />
+                    COPY_NEGATIVE
+                  </button>
+                </div>
+                <div className="bg-red-950/10 border border-red-900/20 p-4 rounded-xl">
+                  <p className="text-red-400/80 font-mono text-sm italic">
+                    {negativePrompt}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {generatedImageUrl && (
               <div className="animate-in zoom-in-95 duration-500">
@@ -751,48 +1010,84 @@ export default function App() {
                   <span className="text-xs text-slate-500 font-mono uppercase">Total Scenes: {scenes.length}</span>
                 </div>
                 
-                <div className="grid grid-cols-1 gap-6">
-                  {scenes.map((scene, idx) => (
+                <div className="grid grid-cols-1 gap-12">
+                  {scenes.map((scene, sIdx) => (
                     <motion.div 
-                      key={idx}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group hover:border-blue-500/30 transition-all"
+                      key={sIdx}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: sIdx * 0.1 }}
+                      className="space-y-6"
                     >
-                      <div className="flex flex-col md:flex-row">
-                        <div className="w-full md:w-48 bg-slate-800 p-6 flex flex-col justify-center items-center border-b md:border-b-0 md:border-r border-slate-700">
-                          <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Scene {idx + 1}</span>
-                          <h3 className="text-lg font-black text-white uppercase tracking-tighter text-center leading-tight">{scene.title}</h3>
-                          <div className="mt-4 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
-                            <span className="text-[10px] font-bold text-blue-400 font-mono">{scene.duration}</span>
-                          </div>
+                      <div className="flex items-center gap-4 bg-slate-800/30 p-6 border-l-4 border-blue-600 rounded-r-xl">
+                        <div>
+                          <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest block">Scene {sIdx + 1}</span>
+                          <h3 className="text-2xl font-black text-white uppercase tracking-tighter leading-tight">{scene.title}</h3>
+                          <p className="text-slate-400 text-sm mt-2 font-sans">{scene.description}</p>
                         </div>
-                        <div className="flex-1 p-6 relative">
-                          <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => {
-                                navigator.clipboard.writeText(scene.prompt);
-                                alert(`Prompt for ${scene.title} copied!`);
-                              }}
-                              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-all"
-                              title="Copy scene prompt"
-                            >
-                              <Copy className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <p className="text-slate-300 font-mono text-sm leading-relaxed italic mb-4">
-                            {scene.prompt}
-                          </p>
-                          {scene.transitionHook && (
-                            <div className="mt-4 pt-4 border-t border-slate-800">
-                              <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block mb-2">Transition Hook (Continuity)</span>
-                              <p className="text-emerald-400/80 font-mono text-xs leading-relaxed">
-                                {scene.transitionHook}
-                              </p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 gap-6 pl-4 md:pl-8 border-l border-slate-800">
+                        {scene.shots.map((shot, shIdx) => (
+                          <motion.div 
+                            key={shIdx}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: (sIdx * 0.1) + (shIdx * 0.05) }}
+                            className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden group hover:border-blue-500/30 transition-all shadow-xl"
+                          >
+                            <div className="flex flex-col md:flex-row">
+                              <div className="w-full md:w-48 bg-slate-800/80 p-6 flex flex-col justify-center items-center border-b md:border-b-0 md:border-r border-slate-700">
+                                <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest mb-1">Shot {sIdx + 1}.{shIdx + 1}</span>
+                                <h4 className="text-sm font-black text-white uppercase tracking-tighter text-center leading-tight">{shot.title}</h4>
+                                <div className="mt-4 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+                                  <span className="text-[9px] font-bold text-blue-400 font-mono">{shot.duration}</span>
+                                </div>
+                              </div>
+                              <div className="flex-1 p-6 relative">
+                                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(shot.prompt);
+                                      alert(`Prompt for ${shot.title} copied!`);
+                                    }}
+                                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-all"
+                                    title="Copy shot prompt"
+                                  >
+                                    <Copy className="w-4 h-4" />
+                                  </button>
+                                </div>
+                                <p className="text-slate-300 font-mono text-sm leading-relaxed italic mb-4">
+                                  {shot.prompt}
+                                </p>
+                                {shot.script && (
+                                  <div className="mt-4 pt-4 border-t border-slate-800">
+                                    <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest block mb-1">🎙️ Guion Técnico (Shot-specific)</span>
+                                    <p className="text-slate-400 font-mono text-[11px] leading-relaxed whitespace-pre-wrap italic">
+                                      {shot.script}
+                                    </p>
+                                  </div>
+                                )}
+                                {shot.subtitles && (
+                                  <div className="mt-3 pt-3 border-t border-slate-800/50">
+                                    <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest block mb-1">💬 Subtítulos</span>
+                                    <p className="text-amber-400/80 font-mono text-[11px] leading-relaxed">
+                                      {shot.subtitles}
+                                    </p>
+                                  </div>
+                                )}
+                                {shot.transitionHook && (
+                                  <div className="mt-3 pt-3 border-t border-slate-800/50">
+                                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block mb-1">Continuity</span>
+                                    <p className="text-emerald-400/70 font-mono text-[11px] leading-relaxed">
+                                      {shot.transitionHook}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          </motion.div>
+                        ))}
                       </div>
                     </motion.div>
                   ))}
@@ -840,6 +1135,14 @@ export default function App() {
                     <p className="text-sm text-slate-300 leading-relaxed font-sans">{temporalLogic}</p>
                   </div>
                 )}
+                {depthLogic && (
+                  <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl">
+                    <h3 className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <Target className="w-4 h-4" /> Depth Logic
+                    </h3>
+                    <p className="text-sm text-slate-300 leading-relaxed font-sans">{depthLogic}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -847,6 +1150,7 @@ export default function App() {
       </>
     )}
     <Guide isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+    <ChatAgent />
   </div>
 </div>
   );

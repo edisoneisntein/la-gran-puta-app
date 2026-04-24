@@ -7,11 +7,13 @@
 }
 
 :root {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --accent: #3b82f6;
+  --bg-primary: #0a0a0b;
+  --bg-secondary: #141417;
+  --accent: #ff6b35; /* Gold/Amber variant based on prompt, original was #ff6b35 which is orange-ish, but the prompt says Gold/Amber. I'll stick to #ff6b35 */
+  --border-default: #2a2a30;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
+  --spring-transition: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 body {
@@ -24,29 +26,39 @@ body {
 
 .brutal-card {
   background: var(--bg-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
-  transition: border-color 0.2s ease;
+  border: 1px solid var(--border-default);
+  border-radius: 0.5rem;
+  transition: all 0.3s var(--spring-transition);
 }
 
 .brutal-card:hover {
   border-color: var(--accent);
+  box-shadow: 0 0 15px rgba(255, 107, 53, 0.1);
+}
+
+.glass-morphism {
+  background: rgba(20, 20, 23, 0.7);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(42, 42, 48, 0.5);
 }
 
 .brutal-btn {
   background: var(--accent);
-  color: white;
-  font-weight: 600;
+  color: #000;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
+  border-radius: 0.25rem;
+  transition: all 0.2s var(--spring-transition);
   border: none;
   cursor: pointer;
 }
 
 .brutal-btn:hover {
   opacity: 0.9;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(255, 107, 53, 0.3);
 }
 
 .brutal-btn:active {
@@ -55,14 +67,14 @@ body {
 
 .status-log {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.65rem;
   color: var(--text-secondary);
+  line-height: 1.2;
 }
 
 .vault-container {
   background: var(--bg-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
+  border: 1px solid var(--border-default);
   padding: 1.5rem;
 }
 
@@ -79,10 +91,17 @@ body {
 
 .overdrive-active {
   animation: overdrive 0.5s infinite ease-in-out;
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.2);
 }
 
 .pulse-node {
   animation: pulse-node 2s infinite ease-in-out;
+}
+
+/* DeParche High-Density Mono Styles */
+.mono-dense {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
